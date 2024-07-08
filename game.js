@@ -1,5 +1,3 @@
-Telegram.WebApp.ready();
-
 const gameContainer = document.getElementById('game-container');
 const gameBoard = document.getElementById('game-board');
 const scoreContainer = document.getElementById('score');
@@ -62,15 +60,15 @@ function slide(row) {
     let arr = row.filter(val => val);
     let missing = size - arr.length;
     let zeros = Array(missing).fill(0);
-    arr = zeros.concat(arr);
+    arr = arr.concat(zeros);
     return arr;
 }
 
 function combine(row) {
-    for (let i = size - 1; i > 0; i--) {
-        if (row[i] === row[i - 1] && row[i] !== 0) {
+    for (let i = 0; i < size - 1; i++) {
+        if (row[i] === row[i + 1] && row[i] !== 0) {
             row[i] *= 2;
-            row[i - 1] = 0;
+            row[i + 1] = 0;
             score += row[i];
             const tiles = document.querySelectorAll('.tile');
             tiles[i].classList.add('merge');
@@ -98,16 +96,16 @@ function handleMove(key) {
     let oldBoard = JSON.parse(JSON.stringify(board));
     if (key === 'ArrowLeft') {
         for (let i = 0; i < size; i++) {
-            board[i] = slideAndCombine(board[i].reverse(), 'left').reverse();
+            board[i] = slideAndCombine(board[i], 'left');
         }
     } else if (key === 'ArrowRight') {
         for (let i = 0; i < size; i++) {
-            board[i] = slideAndCombine(board[i], 'right');
+            board[i] = slideAndCombine(board[i].reverse(), 'right').reverse();
         }
     } else if (key === 'ArrowUp') {
         for (let i = 0; i < size; i++) {
             let col = [board[0][i], board[1][i], board[2][i], board[3][i]];
-            col = slideAndCombine(col.reverse(), 'up').reverse();
+            col = slideAndCombine(col, 'up');
             for (let j = 0; j < size; j++) {
                 board[j][i] = col[j];
             }
@@ -115,7 +113,7 @@ function handleMove(key) {
     } else if (key === 'ArrowDown') {
         for (let i = 0; i < size; i++) {
             let col = [board[0][i], board[1][i], board[2][i], board[3][i]];
-            col = slideAndCombine(col, 'down');
+            col = slideAndCombine(col.reverse(), 'down').reverse();
             for (let j = 0; j < size; j++) {
                 board[j][i] = col[j];
             }
@@ -155,51 +153,59 @@ function showGameOver() {
         <button id="undo-three">Undo last 3 moves</button>
     `;
     gameContainer.appendChild(gameOverDiv);
-    setTimeout(() => gameOverDiv.classList.add('show'), 100);
-
     document.getElementById('remove-tile').addEventListener('click', removeTile);
     document.getElementById('undo-last').addEventListener('click', () => undoMoves(1));
     document.getElementById('undo-three').addEventListener('click', () => undoMoves(3));
 }
 
 function removeTile() {
-    let maxTile = { value: 0, x: -1, y: -1 };
-    for (let i = 0; i < size; i++) {
-        for (let j = 0; j < size; j++) {
-            if (board[i][j] > maxTile.value) {
-                maxTile = { value: board[i][j], x: i, y: j };
+    let maxVal = Math.max(...board.flat());
+    for (let i = size - 1; i >= 0; i--) {
+        for (let j = size - 1; j >= 0; j--) {
+            if (board[i][j] === maxVal) {
+                board[i][j] = 0;
+                updateBoard();
+                hideGameOver();
+                return;
             }
         }
-    }
-    if (maxTile.x !== -1 && maxTile.y !== -1) {
-        board[maxTile.x][maxTile.y] = 0;
-        updateBoard();
-        document.getElementById('game-over').remove();
-    }
-}
-
-function saveState() {
-    history.push({
-        board: JSON.parse(JSON.stringify(board)),
-        score: score
-    });
-    if (history.length > 3) {
-        history.shift();
     }
 }
 
 function undoMoves(count) {
     if (history.length >= count) {
-        const state = history[history.length - count];
-        board = state.board;
-        score = state.score;
+        for (let i = 0; i < count; i++) {
+            board = history.pop();
+        }
         updateBoard();
-        document.getElementById('game-over').remove();
+        hideGameOver();
     }
+}
+
+function saveState() {
+    history.push(JSON.parse(JSON.stringify(board)));
+}
+
+function hideGameOver() {
+    const gameOverDiv = document.getElementById('game-over');
+    if (gameOverDiv) {
+        gameOverDiv.classList.remove('show');
+        setTimeout(() => gameOverDiv.remove(), 500);
+    }
+}
+
+function setupHammer() {
+    const hammer = new Hammer(document.body);
+    hammer.get('swipe').set({ direction: Hammer.DIRECTION_ALL });
+    hammer.on('swipeleft', () => handleMove('ArrowLeft'));
+    hammer.on('swiperight', () => handleMove('ArrowRight'));
+    hammer.on('swipeup', () => handleMove('ArrowUp'));
+    hammer.on('swipedown', () => handleMove('ArrowDown'));
 }
 
 window.addEventListener('keydown', (event) => {
     handleMove(event.key);
 });
 
+setupHammer();
 initBoard();
