@@ -2,12 +2,15 @@ Telegram.WebApp.ready();
 
 const gameContainer = document.getElementById('game-container');
 const gameBoard = document.getElementById('game-board');
+const scoreContainer = document.getElementById('score');
 
 const size = 4;
 let board = [];
 let score = 0;
+let history = [];
 
 function initBoard() {
+    gameBoard.innerHTML = '';
     for (let i = 0; i < size; i++) {
         board[i] = [];
         for (let j = 0; j < size; j++) {
@@ -18,12 +21,13 @@ function initBoard() {
             gameBoard.appendChild(tile);
         }
     }
-    addRandomTile();
-    addRandomTile();
+    addRandomTile(true);
+    addRandomTile(true);
     updateBoard();
+    saveState();
 }
 
-function addRandomTile() {
+function addRandomTile(isNew = false) {
     let emptyTiles = [];
     for (let i = 0; i < size; i++) {
         for (let j = 0; j < size; j++) {
@@ -35,6 +39,10 @@ function addRandomTile() {
     if (emptyTiles.length > 0) {
         const { x, y } = emptyTiles[Math.floor(Math.random() * emptyTiles.length)];
         board[x][y] = Math.random() < 0.9 ? 2 : 4;
+        if (isNew) {
+            const tiles = document.querySelectorAll('.tile');
+            tiles[x * size + y].classList.add('new-tile');
+        }
     }
 }
 
@@ -45,7 +53,9 @@ function updateBoard() {
         const col = index % size;
         tile.dataset.value = board[row][col];
         tile.textContent = board[row][col] === 0 ? '' : board[row][col];
+        tile.classList.remove('new-tile', 'merge', 'move-left', 'move-right', 'move-up', 'move-down');
     });
+    scoreContainer.textContent = score;
 }
 
 function slide(row) {
@@ -57,37 +67,47 @@ function slide(row) {
 }
 
 function combine(row) {
-    for (let i = size - 1; i >= 1; i--) {
+    for (let i = size - 1; i > 0; i--) {
         if (row[i] === row[i - 1] && row[i] !== 0) {
             row[i] *= 2;
             row[i - 1] = 0;
             score += row[i];
+            const tiles = document.querySelectorAll('.tile');
+            tiles[i].classList.add('merge');
         }
     }
     return row;
 }
 
-function slideAndCombine(row) {
+function slideAndCombine(row, direction) {
+    let oldRow = [...row];
     row = slide(row);
     row = combine(row);
     row = slide(row);
+    for (let i = 0; i < size; i++) {
+        if (oldRow[i] !== row[i]) {
+            const tiles = document.querySelectorAll('.tile');
+            tiles[i].classList.add(`move-${direction}`);
+        }
+    }
     return row;
 }
 
 function handleMove(key) {
+    saveState();
     let oldBoard = JSON.parse(JSON.stringify(board));
     if (key === 'ArrowLeft') {
         for (let i = 0; i < size; i++) {
-            board[i] = slideAndCombine(board[i]);
+            board[i] = slideAndCombine(board[i].reverse(), 'left').reverse();
         }
     } else if (key === 'ArrowRight') {
         for (let i = 0; i < size; i++) {
-            board[i] = slideAndCombine(board[i].reverse()).reverse();
+            board[i] = slideAndCombine(board[i], 'right');
         }
     } else if (key === 'ArrowUp') {
         for (let i = 0; i < size; i++) {
             let col = [board[0][i], board[1][i], board[2][i], board[3][i]];
-            col = slideAndCombine(col);
+            col = slideAndCombine(col.reverse(), 'up').reverse();
             for (let j = 0; j < size; j++) {
                 board[j][i] = col[j];
             }
@@ -95,14 +115,14 @@ function handleMove(key) {
     } else if (key === 'ArrowDown') {
         for (let i = 0; i < size; i++) {
             let col = [board[0][i], board[1][i], board[2][i], board[3][i]];
-            col = slideAndCombine(col.reverse()).reverse();
+            col = slideAndCombine(col, 'down');
             for (let j = 0; j < size; j++) {
                 board[j][i] = col[j];
             }
         }
     }
     if (JSON.stringify(oldBoard) !== JSON.stringify(board)) {
-        addRandomTile();
+        addRandomTile(true);
         updateBoard();
     }
     checkGameOver();
@@ -120,7 +140,61 @@ function checkGameOver() {
         }
     }
     if (!movesAvailable) {
-        alert('Game Over!');
+        showGameOver();
+    }
+}
+
+function showGameOver() {
+    const gameOverDiv = document.createElement('div');
+    gameOverDiv.id = 'game-over';
+    gameOverDiv.innerHTML = `
+        <h2>Game Over!</h2>
+        <p>Your score: ${score}</p>
+        <button id="remove-tile">Remove one tile</button>
+        <button id="undo-last">Undo last move</button>
+        <button id="undo-three">Undo last 3 moves</button>
+    `;
+    gameContainer.appendChild(gameOverDiv);
+    setTimeout(() => gameOverDiv.classList.add('show'), 100);
+
+    document.getElementById('remove-tile').addEventListener('click', removeTile);
+    document.getElementById('undo-last').addEventListener('click', () => undoMoves(1));
+    document.getElementById('undo-three').addEventListener('click', () => undoMoves(3));
+}
+
+function removeTile() {
+    let maxTile = { value: 0, x: -1, y: -1 };
+    for (let i = 0; i < size; i++) {
+        for (let j = 0; j < size; j++) {
+            if (board[i][j] > maxTile.value) {
+                maxTile = { value: board[i][j], x: i, y: j };
+            }
+        }
+    }
+    if (maxTile.x !== -1 && maxTile.y !== -1) {
+        board[maxTile.x][maxTile.y] = 0;
+        updateBoard();
+        document.getElementById('game-over').remove();
+    }
+}
+
+function saveState() {
+    history.push({
+        board: JSON.parse(JSON.stringify(board)),
+        score: score
+    });
+    if (history.length > 3) {
+        history.shift();
+    }
+}
+
+function undoMoves(count) {
+    if (history.length >= count) {
+        const state = history[history.length - count];
+        board = state.board;
+        score = state.score;
+        updateBoard();
+        document.getElementById('game-over').remove();
     }
 }
 
